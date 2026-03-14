@@ -48,6 +48,24 @@ function weatherCodeIcon(code) {
   return '•';
 }
 
+function $(id) { return document.getElementById(id); }
+function setText(id, text) { const el = $(id); if (el) el.textContent = text; }
+function setHTML(id, html) { const el = $(id); if (el) el.innerHTML = html; }
+function setClass(id, className) { const el = $(id); if (el) el.className = className; }
+function isoNow() { return new Date().toISOString(); }
+function humanDateTime(isoLike) {
+  if (!isoLike) return '—';
+  const d = new Date(isoLike);
+  return Number.isNaN(d.getTime()) ? String(isoLike) : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function displayDateOnly(isoLike) {
+  if (!isoLike) return '—';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(isoLike)) return fmtDate(isoLike);
+  const d = new Date(isoLike);
+  return Number.isNaN(d.getTime()) ? String(isoLike) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function safeArray(arr) { return Array.isArray(arr) ? arr : []; }
+
 function hourlyWindowForToday() {
   if (!weather?.hourly?.time) return [];
   const todayIso = isoToday();
@@ -279,7 +297,8 @@ function contiguousLabel(hours) {
 }
 function savePlants() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(plants));
-  const el = document.getElementById('save-msg');
+  const el = $('save-msg');
+  if (!el) return;
   el.style.opacity = '1';
   clearTimeout(el._t);
   el._t = setTimeout(() => el.style.opacity = '0', 1800);
@@ -392,9 +411,14 @@ function toleranceFor(p) {
 
 async function fetchWeather() {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${LOCATION.lat}&longitude=${LOCATION.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,cloud_cover,wind_speed_10m,wind_gusts_10m,is_day,weather_code&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m,uv_index,is_day,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,daylight_duration,uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=${encodeURIComponent(LOCATION.timezone)}&forecast_days=10`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    const resp = await fetch(url);
+    setText('hero-updated', 'Loading…');
+    const resp = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!resp.ok) throw new Error(`Weather HTTP ${resp.status}`);
     const data = await resp.json();
+    if (!data?.current || !data?.daily || !data?.hourly) throw new Error('Weather payload missing expected sections');
     weather = data;
     renderWeatherHero();
     renderWeatherBar();
@@ -402,8 +426,25 @@ async function fetchWeather() {
     renderHourlyWindow();
     if (selectedId) renderDetail();
   } catch (err) {
-    document.getElementById('hero-summary').textContent = 'Weather fetch failed. The internet has chosen mischief.';
-    console.warn(err);
+    console.warn('Weather fetch failed:', err);
+    weather = null;
+    setText('hero-location', `${LOCATION.name} · Zone ${LOCATION.zone}`);
+    setText('hero-updated', 'Weather unavailable');
+    setText('hero-summary', 'Live weather could not be loaded right now. The plant dashboard still works, but forecast-driven hardening guidance is offline.');
+    setClass('hero-guidance', 'alert warn');
+    setText('hero-guidance', err?.name === 'AbortError' ? 'Weather request timed out after 9 seconds. Check network access or try refresh.' : `Weather request failed: ${err.message || 'unknown error'}`);
+    setHTML('readiness-list', '<li>Weather feed unavailable. Use the 10-day forecast from your local weather source before hardening anything tender.</li>');
+    setHTML('grow-constants', [
+      `Photoperiod: ${LOCATION.lightsOn}–${LOCATION.lightsOff} (${photoperiodHours(LOCATION.lightsOn, LOCATION.lightsOff)} h).`,
+      `Room environment: ${LOCATION.roomTemp} and roughly ${LOCATION.humidity} RH.`,
+      `Soil: ${LOCATION.soil}; nutrient in use: ${LOCATION.nutrient}.`,
+      ...LOCATION.lighting
+    ].map(x => `<li>${x}</li>`).join(''));
+    setHTML('ops-queue', '<li>Live weather is offline. Indoor tracking still works.</li>');
+    renderHourlyProfileControls();
+    renderHourlyWindow();
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -482,8 +523,19 @@ function renderHourlyProfileControls() {
 }
 
 function renderHourlyWindow() {
-  const strip = document.getElementById('hourly-window-strip');
-  if (!strip || !weather?.hourly) return;
+  const strip = $('hourly-window-strip');
+  if (!strip) return;
+  if (!weather?.hourly) {
+    setText('hourly-hardening-window', 'Weather offline');
+    setText('hourly-hardening-note', 'Hardening windows need forecast data.');
+    const indoorAdvice = destinationWateringAdvice(activeHourlyProfileMeta());
+    setText('hourly-watering-window', indoorAdvice.windowLabel);
+    setText('hourly-watering-note', indoorAdvice.note);
+    setText('hourly-bringin-window', 'Manual check');
+    setText('hourly-bringin-note', 'Use forecast or local weather until the live feed comes back.');
+    strip.innerHTML = `<div class="empty-msg">${indoorAdvice.stripMessage}</div>`;
+    return;
+  }
   const activeProfileKey = activeHourlyProfile();
   const meta = activeHourlyProfileMeta();
   const destinationMode = destinationWeatherMode(meta);
@@ -625,8 +677,8 @@ function renderOverview(p, tc) {
   const lastWater = latestEntry(p.waterLog);
   const lastCheck = latestEntry(p.checkLog);
   const waterStatus = p.method === 'DWC' ? latestDwcHealth(p) : nextWaterCheckInfo(p);
-  const lastWaterLabel = lastWater ? `${lastWater.amount || 'Watered'} · ${lastWater.date}` : 'No watering logged';
-  const lastCheckLabel = lastCheck ? `${lastCheck.result || 'Check'} · ${lastCheck.date}` : 'No dry-back check logged';
+  const lastWaterLabel = lastWater ? `${lastWater.amount || 'Watered'} · ${humanDateTime(lastWater.date)}` : 'No watering logged';
+  const lastCheckLabel = lastCheck ? `${lastCheck.result || 'Check'} · ${humanDateTime(lastCheck.date)}` : 'No dry-back check logged';
   tc.innerHTML = `<div class="metrics-row">
     <div class="metric"><div class="metric-label">Method</div><div class="metric-value sm">${p.method}</div></div>
     <div class="metric"><div class="metric-label">Light</div><div class="metric-value sm">${p.lightHours} h/day</div></div>
@@ -662,7 +714,7 @@ function renderOverview(p, tc) {
   </div>
   <div class="card">
     <div class="card-label">Recent notes</div>
-    ${p.notes.length ? `<ul class="log-list">${[...p.notes].reverse().slice(0, 5).map(n => `<li><span class="log-text">${n.text}</span><span class="log-date">${n.date}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No notes yet.</div>'}
+    ${p.notes.length ? `<ul class="log-list">${[...p.notes].reverse().slice(0, 5).map(n => `<li><span class="log-text">${n.text}</span><span class="log-date">${displayDateOnly(n.date)}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No notes yet.</div>'}
   </div>`;
 }
 
@@ -676,7 +728,7 @@ function renderLog(p, tc) {
   </div>
   <div class="card">
     <div class="card-label">All notes <span class="count">${p.notes.length}</span></div>
-    ${p.notes.length ? `<ul class="log-list">${[...p.notes].reverse().map(n => `<li><span class="log-text">${n.text}</span><span class="log-date">${n.date}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No notes yet.</div>'}
+    ${p.notes.length ? `<ul class="log-list">${[...p.notes].reverse().map(n => `<li><span class="log-text">${n.text}</span><span class="log-date">${displayDateOnly(n.date)}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No notes yet.</div>'}
   </div>`;
 }
 
@@ -691,7 +743,7 @@ function renderFeed(p, tc) {
   </div>
   <div class="card">
     <div class="card-label">Feed history <span class="count">${p.feeds.length}</span></div>
-    ${p.feeds.length ? `<ul class="log-list">${[...p.feeds].reverse().map(f => `<li><span class="log-text">${f.text}</span><span class="log-date">${f.date}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No feeds logged yet.</div>'}
+    ${p.feeds.length ? `<ul class="log-list">${[...p.feeds].reverse().map(f => `<li><span class="log-text">${f.text}</span><span class="log-date">${displayDateOnly(f.date)}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No feeds logged yet.</div>'}
   </div>`;
 }
 
@@ -741,14 +793,14 @@ function renderDWC(p, tc) {
     <div class="two-col-grid">
       <div>
         <h4 class="mini-head">pH</h4>
-        ${p.phLog.length ? `<ul class="log-list">${[...p.phLog].reverse().slice(0, 8).map(e => `<li><span class="log-text">${e.value.toFixed(1)}</span><span class="log-date">${e.date}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No pH logs yet.</div>'}
+        ${p.phLog.length ? `<ul class="log-list">${[...p.phLog].reverse().slice(0, 8).map(e => `<li><span class="log-text">${e.value.toFixed(1)}</span><span class="log-date">${displayDateOnly(e.date)}</span></li>`).join('')}</ul>` : '<div class="empty-msg">No pH logs yet.</div>'}
       </div>
       <div>
         <h4 class="mini-head">EC / Temp</h4>
         ${p.ecLog.length || p.waterTempLog.length ? `<ul class="log-list">${[...Array(Math.max(p.ecLog.length, p.waterTempLog.length)).keys()].reverse().slice(0,8).map(i => {
           const ec = p.ecLog[p.ecLog.length - 1 - i];
           const wt = p.waterTempLog[p.waterTempLog.length - 1 - i];
-          return `<li><span class="log-text">${ec ? `EC ${ec.value.toFixed(2)}` : 'EC —'} ${wt ? `· Temp ${Math.round(wt.value)}°F` : ''}</span><span class="log-date">${(ec || wt)?.date || ''}</span></li>`;
+          return `<li><span class="log-text">${ec ? `EC ${ec.value.toFixed(2)}` : 'EC —'} ${wt ? `· Temp ${Math.round(wt.value)}°F` : ''}</span><span class="log-date">${displayDateOnly((ec || wt)?.date || '')}</span></li>`;
         }).join('')}</ul>` : '<div class="empty-msg">No EC or temperature logs yet.</div>'}
       </div>
     </div>
@@ -817,7 +869,7 @@ function importData(evt) {
     try {
       const parsed = JSON.parse(reader.result);
       if (!Array.isArray(parsed.plants)) throw new Error('Invalid backup');
-      plants = parsed.plants;
+      plants = parsed.plants.map(normalizePlant);
       savePlants();
       renderSidebar();
       renderDetail();
@@ -902,7 +954,7 @@ function bindEvents() {
       const input = document.getElementById('note-text');
       if (!input.value.trim()) return;
       const p = plants.find(x => x.id === selectedId);
-      p.notes.push({ text: input.value.trim(), date: new Date().toLocaleDateString('en-US') });
+      p.notes.push({ text: input.value.trim(), date: isoNow() });
       input.value = '';
       savePlants();
       renderDetail();
@@ -913,7 +965,7 @@ function bindEvents() {
       const input = document.getElementById('feed-text');
       if (!input.value.trim()) return;
       const p = plants.find(x => x.id === selectedId);
-      p.feeds.push({ text: input.value.trim(), date: new Date().toLocaleDateString('en-US') });
+      p.feeds.push({ text: input.value.trim(), date: isoNow() });
       input.value = '';
       savePlants();
       renderDetail();
@@ -924,7 +976,7 @@ function bindEvents() {
       const ph = parseFloat(document.getElementById('ph-input').value);
       const ec = parseFloat(document.getElementById('ec-input').value);
       const wt = parseFloat(document.getElementById('wt-input').value);
-      const date = new Date().toLocaleDateString('en-US');
+      const date = isoNow();
       if (!Number.isNaN(ph)) p.phLog.push({ value: ph, date });
       if (!Number.isNaN(ec)) p.ecLog.push({ value: ec, date });
       if (!Number.isNaN(wt)) p.waterTempLog.push({ value: wt, date });
@@ -960,7 +1012,11 @@ function bindEvents() {
 
 function init() {
   loadPlants();
+  if (!selectedId && plants.length) selectedId = plants[0].id;
   renderSidebar();
+  renderDetail();
+  renderHourlyProfileControls();
+  renderHourlyWindow();
   bindEvents();
   fetchWeather();
 }
