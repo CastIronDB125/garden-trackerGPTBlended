@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Garden Tracker — Blended Edition</title>
+  <meta name="description" content="Bella Vista garden tracker with rich weather briefing, frost countdown, hardening planner, and plant-by-plant logs." />
+  <meta name="theme-color" content="#101210" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Lora:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="header">
+      <div id="header-left">
+        <h1>🌱 Garden Tracker</h1>
+        <p>Bella Vista, AR · blended edition · dark theme + richer weather briefing</p>
+      </div>
+      <div id="header-right">
+        <span id="save-msg">saved</span>
+        <button class="btn" id="export-btn" type="button">Export</button>
+        <label class="btn btn-label">Import<input id="import-input" type="file" accept="application/json" hidden></label>
+      </div>
+    </header>
+
+    <section id="weather-hero">
+      <div class="hero-main cardish">
+        <div>
+          <div class="hero-kicker">Daily weather briefing</div>
+          <div class="hero-title-row">
+            <h2 id="hero-location">Bella Vista, AR</h2>
+            <span class="pill" id="hero-updated">Loading…</span>
+          </div>
+          <p id="hero-summary" class="hero-summary">Fetching current conditions and forecast…</p>
+          <div id="hero-guidance" class="alert info">Crunching the weather goblins.</div>
+        </div>
+        <div class="hero-grid">
+          <div class="metric-card">
+            <div class="metric-label">Current</div>
+            <div class="metric-value" id="wx-current-temp">—</div>
+            <div class="metric-sub" id="wx-current-detail">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Today</div>
+            <div class="metric-value" id="wx-today-hi-lo">—</div>
+            <div class="metric-sub" id="wx-today-extra">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Sun</div>
+            <div class="metric-value" id="wx-sunrise-sunset">—</div>
+            <div class="metric-sub" id="wx-daylight">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Frost-safe target</div>
+            <div class="metric-value" id="wx-frost-date">—</div>
+            <div class="metric-sub" id="wx-frost-countdown">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-secondary-grid">
+        <div class="cardish secondary-card">
+          <h3>Outdoor readiness</h3>
+          <ul class="plain-list" id="readiness-list"></ul>
+        </div>
+        <div class="cardish secondary-card">
+          <h3>Grow room constants</h3>
+          <ul class="plain-list" id="grow-constants"></ul>
+        </div>
+        <div class="cardish secondary-card">
+          <h3>Ops queue</h3>
+          <ul class="plain-list" id="ops-queue"></ul>
+        </div>
+      </div>
+
+
+      <div class="hourly-window-wrap">
+        <div class="cardish secondary-card hourly-briefing-card">
+          <div class="hourly-briefing-head">
+            <div>
+              <h3>Today outdoors window</h3>
+              <p class="section-sub">Hour-by-hour timing for hardening, watering, and hauling the green weirdos back inside.</p>
+            </div>
+            <div class="hourly-legend">
+              <span class="legend-chip legend-good">good</span>
+              <span class="legend-chip legend-okay">okay</span>
+              <span class="legend-chip legend-bad">bad</span>
+            </div>
+          </div>
+          <div class="hourly-profile-wrap">
+            <div id="hourly-profile-bar" class="hourly-profile-bar" aria-label="crop specific outdoors toggles"></div>
+            <div id="hourly-profile-note" class="hourly-profile-note">Loading crop profile…</div>
+          </div>
+          <div class="hourly-summary-grid">
+            <div class="metric-card compact">
+              <div class="metric-label">Hardening window</div>
+              <div class="metric-value sm" id="hourly-hardening-window">—</div>
+              <div class="metric-sub" id="hourly-hardening-note">—</div>
+            </div>
+            <div class="metric-card compact">
+              <div class="metric-label">Watering window</div>
+              <div class="metric-value sm" id="hourly-watering-window">—</div>
+              <div class="metric-sub" id="hourly-watering-note">—</div>
+            </div>
+            <div class="metric-card compact">
+              <div class="metric-label">Bring-back-in</div>
+              <div class="metric-value sm" id="hourly-bringin-window">—</div>
+              <div class="metric-sub" id="hourly-bringin-note">—</div>
+            </div>
+          </div>
+          <div id="hourly-window-strip" class="hourly-window-strip" aria-label="hour-by-hour outdoors window"></div>
+        </div>
+      </div>
+
+      <div id="weather-bar" aria-label="10-day forecast"></div>
+    </section>
+
+    <div id="body">
+      <aside id="sidebar">
+        <div id="filter-bar"></div>
+        <div id="plant-list"></div>
+      </aside>
+
+      <main id="detail">
+        <div class="empty-detail">← Select a plant to view details</div>
+      </main>
+    </div>
+  </div>
+
+  <script src="data/plants.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
